@@ -90,13 +90,15 @@ spec:
   - os-webhook-app.kube-system.svc
   - os-webhook-app.kube-system.svc.cluster.local
   issuerRef:
-    kind: Issuer
-    name: os-webhook-app-issuer
+    kind: ClusterIssuer
+    name: letsencrypt-giantswarm
   secretName: os-webhook-app
 ---
 apiVersion: admissionregistration.k8s.io/v1beta1
 kind: MutatingWebhookConfiguration
 metadata:
+  annotations:
+    cert-manager.io/inject-ca-from: kube-system/os-webhook-app-cert
   name: mutating-os-webhook-app
   namespace: kube-system
 webhooks:
