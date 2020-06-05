@@ -1,0 +1,120 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: os-webhook-app
+  namespace: kube-system
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      application: os-webhook-app
+  template:
+    metadata:
+      labels:
+        application: os-webhook-app
+    spec:
+      serviceAccountName: os-webhook-app
+      containers:
+      - name: os-webhook-app
+        image: paurosello/os-webhook-app:0.0.0
+        ports:
+        - containerPort: 443
+        volumeMounts:
+        - name: tls
+          mountPath: "/certs"
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 443
+            scheme: HTTPS
+          initialDelaySeconds: 5
+          periodSeconds: 3
+          timeoutSeconds: 1
+          successThreshold: 2
+          failureThreshold: 1
+        livenessProbe:
+          tcpSocket:
+            port: 443
+          initialDelaySeconds: 5
+          periodSeconds: 3
+          timeoutSeconds: 1
+          successThreshold: 1
+          failureThreshold: 1
+      volumes:
+      - name: tls
+        secret:
+          secretName: os-webhook-app
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: os-webhook-app
+  namespace: kube-system
+spec:
+  ports:
+  - port: 443
+    protocol: TCP
+    targetPort: 443
+  selector:
+    application: os-webhook-app
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: os-webhook-app
+  namespace: kube-system
+---
+apiVersion: rbac.authorization.k8s.io/v1beta1
+kind: ClusterRoleBinding
+metadata:
+  name: os-webhook-app
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: cluster-admin
+subjects:
+  - kind: ServiceAccount
+    name: os-webhook-app
+    namespace: kube-system
+---
+apiVersion: cert-manager.io/v1alpha2
+kind: Certificate
+metadata:
+  name: os-webhook-app-cert
+  namespace: kube-system
+spec:
+  dnsNames:
+  - os-webhook-app.kube-system.svc
+  - os-webhook-app.kube-system.svc.cluster.local
+  issuerRef:
+    kind: Issuer
+    name: os-webhook-app-issuer
+  secretName: os-webhook-app
+---
+apiVersion: admissionregistration.k8s.io/v1beta1
+kind: MutatingWebhookConfiguration
+metadata:
+  name: mutating-os-webhook-app
+  namespace: kube-system
+webhooks:
+  - name: mutating.mutating-os-webhook-app.giantswarm.io
+    failurePolicy: Fail
+    clientConfig:
+      service:
+        name: os-webhook-app
+        namespace: kube-system
+        path: /
+      caBundle: Cg==
+    rules:
+      - apiGroups: ["infrastructure.giantswarm.io"]
+        resources:
+          - "awscontrolplane"
+          - "awsclusters"
+        apiVersions:
+          - "v1alpha2"
+        operations:
+          - CREATE
+          - UPDATE
