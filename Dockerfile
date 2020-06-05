@@ -1,4 +1,4 @@
-FROM alpine:3.11
+FROM centos
 WORKDIR /app
 COPY os-webhook-app /app
 CMD ["/app/os-webhook-app"]

@@ -2,51 +2,43 @@ package webhook
 
 import (
 	"fmt"
+	"net/http"
 	"os"
 
 	admissionv1beta1 "k8s.io/api/admission/v1beta1"
-	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 
+	"github.com/golang/glog"
 	log "github.com/sirupsen/logrus"
 )
 
-// AdmissionHook implements the OpenShift MutatingAdmissionHook interface.
-// https://github.com/openshift/generic-admission-server/blob/v1.9.0/pkg/apiserver/apiserver.go#L45
 type AWSClusterAdmissionHook struct {
-	client *kubernetes.Clientset // Kubernetes client for calling Api
-}
+	AdmissionWebhook
 
-func (ah *AWSClusterAdmissionHook) ValidatingResource() (plural schema.GroupVersionResource, singular string) {
-	return schema.GroupVersionResource{
-			Group:    "infrastructure.giantswarm.io",
-			Version:  "v1alpha2",
-			Resource: "awsclusters",
-		},
-		"AdmissionReview"
+	client *kubernetes.Clientset // Kubernetes client for calling Api
 }
 
 func (ah *AWSClusterAdmissionHook) Admit(req *admissionv1beta1.AdmissionRequest) *admissionv1beta1.AdmissionResponse {
 	resp := &admissionv1beta1.AdmissionResponse{}
 	resp.UID = req.UID
-	requestName := fmt.Sprintf("%s %s", req.Kind, req.Object)
 
 	// Skip operations that aren't create or update
 	if req.Operation != admissionv1beta1.Create &&
 		req.Operation != admissionv1beta1.Update {
-		log.Info("Skipping %s request for %s", req.Operation, requestName)
+		glog.Infof("Skipping %s request for %s", req.Operation, req.Object)
 		resp.Allowed = true
 		return resp
 	}
 
-	log.Info("Processing %s request for %s", req.Operation, requestName)
+	glog.Infof("Processing %s request for %s", req.Operation, req.Name)
+	glog.V(2).Infof("Incoming object: %s", req.Object)
 
 	resp.Allowed = true
 	return resp
 }
 
-func (ah *AWSClusterAdmissionHook) Initialize(kubeClientConfig *rest.Config, stopCh <-chan struct{}) error {
+func (ah *AWSClusterAdmissionHook) Initialize(kubeClientConfig *rest.Config) error {
 	// Initialise a Kubernetes client
 	client, err := kubernetes.NewForConfig(kubeClientConfig)
 	if err != nil {
@@ -60,4 +52,11 @@ func (ah *AWSClusterAdmissionHook) Initialize(kubeClientConfig *rest.Config, sto
 
 	log.Info("Webhook Initialization Complete.")
 	return nil
+}
+
+func (ah *AWSClusterAdmissionHook) Serve(w http.ResponseWriter, r *http.Request) {
+	admissionReview := ah.GetAdmissionReview(w, r)
+	glog.V(5).Infof("Incoming Admission review: %+v\n", admissionReview)
+	admissionResponse := ah.Admit(admissionReview.Request)
+	ah.Answer(w, r, admissionResponse)
 }

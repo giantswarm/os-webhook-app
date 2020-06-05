@@ -19,30 +19,19 @@ spec:
       serviceAccountName: os-webhook-app
       containers:
       - name: os-webhook-app
-        image: paurosello/os-webhook-app:0.0.0
+        image: paurosello/os-webhook-app:0.0.16
+        args:
+          - ./os-webhook-app
+          - --tlsCertFile=/certs/ca.crt
+          - --tlsKeyFile=/certs/tls.key
+          - -alsologtostderr
+          - --log_dir=/
+          - -v=2
         ports:
-        - containerPort: 443
+        - containerPort: 4430
         volumeMounts:
         - name: tls
           mountPath: "/certs"
-        readinessProbe:
-          httpGet:
-            path: /health
-            port: 443
-            scheme: HTTPS
-          initialDelaySeconds: 5
-          periodSeconds: 3
-          timeoutSeconds: 1
-          successThreshold: 2
-          failureThreshold: 1
-        livenessProbe:
-          tcpSocket:
-            port: 443
-          initialDelaySeconds: 5
-          periodSeconds: 3
-          timeoutSeconds: 1
-          successThreshold: 1
-          failureThreshold: 1
       volumes:
       - name: tls
         secret:
@@ -57,7 +46,7 @@ spec:
   ports:
   - port: 443
     protocol: TCP
-    targetPort: 443
+    targetPort: 4430
   selector:
     application: os-webhook-app
 ---
@@ -91,7 +80,7 @@ spec:
   - os-webhook-app.kube-system.svc.cluster.local
   issuerRef:
     kind: ClusterIssuer
-    name: letsencrypt-giantswarm
+    name: selfsigned-giantswarm
   secretName: os-webhook-app
 ---
 apiVersion: admissionregistration.k8s.io/v1beta1
@@ -102,18 +91,17 @@ metadata:
   name: mutating-os-webhook-app
   namespace: kube-system
 webhooks:
-  - name: mutating.mutating-os-webhook-app.giantswarm.io
-    failurePolicy: Fail
+  - name: awsclusters.mutating-os-webhook-app.giantswarm.io
+    failurePolicy: Ignore
     clientConfig:
       service:
         name: os-webhook-app
         namespace: kube-system
-        path: /
+        path: /awscluster
       caBundle: Cg==
     rules:
       - apiGroups: ["infrastructure.giantswarm.io"]
         resources:
-          - "awscontrolplane"
           - "awsclusters"
         apiVersions:
           - "v1alpha2"
